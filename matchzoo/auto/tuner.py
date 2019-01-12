@@ -37,6 +37,10 @@ class Tuner(object):
             'evaluate_kwargs', {}, validator=lambda x: isinstance(x, dict)
         ))
         self._params.add(engine.Param(
+            'after_build',
+            validator=lambda x: callable(x)
+        ))
+        self._params.add(engine.Param(
             'mode', 'minimize',
             validator=lambda mode: mode in ('minimize', 'maximize')
         ))
@@ -91,11 +95,10 @@ class Tuner(object):
         return self._clean_up_trials(trials, mode)
 
     def _test_func(self, space):
-        for key, value in space.items():
-            self._params['model'].params[key] = value
+        model = self._prepare_model(space)
 
         score = self._eval(
-            model=self._params['model'],
+            model=model,
             train_data=self._params['train_data'],
             test_data=self._params['test_data'],
             metric=self._params['optimizing_metric'],
@@ -115,12 +118,19 @@ class Tuner(object):
             'model_params': self._params['model'].params
         }
 
+    def _prepare_model(self, space):
+        for key, value in space.items():
+            self._params['model'].params[key] = value
+        model = self._params['model']
+        model.build()
+        model.compile()
+        if self._params['after_build']:
+            self._params['after_build'](model)
+        return model
+
     @classmethod
     def _eval(cls, model, train_data, test_data, metric, mode,
               fit_kwargs, evaluate_kwargs):
-        model.build()
-        model.compile()
-
         if isinstance(train_data, matchzoo.DataPack):
             model.fit(*train_data.unpack(), **fit_kwargs)
         elif isinstance(train_data, matchzoo.DataGenerator):
