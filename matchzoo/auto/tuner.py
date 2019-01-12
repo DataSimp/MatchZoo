@@ -40,13 +40,11 @@ class Tuner(object):
             'mode', 'minimize',
             validator=lambda mode: mode in ('minimize', 'maximize')
         ))
-        input_model_metrics = self._params['model']['task'].metrics
         self._params.add(engine.Param(
-            'optimizing_metric', 'loss',
-            validator=lambda metric: metric in input_model_metrics
+            'optimizing_metric', validator=self._valiadate_metric
         ))
         self._params.add(engine.Param(
-            'num_evals', 32,
+            'num_evals', 8,
             validator=lambda max_evals: isinstance(max_evals, int)
         ))
         self._params.add(engine.Param(
@@ -55,6 +53,9 @@ class Tuner(object):
         ))
         for key, value in kwargs:
             self._params[key] = value
+
+    def _valiadate_metric(self, metric):
+        return metric in self._params['model'].params['task'].metrics
 
     @classmethod
     def _validate_model(cls, model):
@@ -65,10 +66,6 @@ class Tuner(object):
             return False
         else:
             return True
-
-    @classmethod
-    def _validate_data(cls, data):
-        return
 
     @property
     def params(self):
@@ -90,7 +87,8 @@ class Tuner(object):
         )
 
         self._params['model'].params = orig_params
-        return [self._clean_up_trial(trial) for trial in trials]
+        mode = self._params['mode']
+        return self._clean_up_trials(trials, mode)
 
     def _test_func(self, space):
         for key, value in space.items():
@@ -106,7 +104,7 @@ class Tuner(object):
             evaluate_kwargs=self._params['evaluate_kwargs'],
         )
 
-        model_id = uuid.uuid4()
+        model_id = str(uuid.uuid4())
         self._params['model'].save(self._params['save_dir'].joinpath(model_id))
 
         return {
@@ -143,10 +141,19 @@ class Tuner(object):
         return score
 
     @classmethod
-    def _clean_up_trial(cls, trial):
+    def _clean_up_trials(cls, trials, mode):
+        def _format_trial(trial):
+            score = trial['result']['loss']
+            if mode == 'maximize':
+                score = -score
+            return {
+                'model_id': trial['result']['model_id'],
+                'model_params': trial['result']['model_params'],
+                'metric': score,
+                'sampled_params': trial['result']['space'],
+            }
+
         return {
-            'model_id': trial['result']['model_id'],
-            'model_params': trial['result']['model_params'],
-            'loss': trial['result']['loss'],
-            'sampled_params': trial['result']['space'],
+            'best': _format_trial(trials.best_trial),
+            'trials': [_format_trial(trial) for trial in trials.trials]
         }
