@@ -126,7 +126,8 @@ class Param(object):
 
         self.validator = validator
         self.hyper_space = hyper_space
-        self.value = value
+        if value is not None:
+            self.value = value
 
     @property
     def name(self) -> str:
